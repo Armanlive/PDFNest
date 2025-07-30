@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme Variables */
+:root {
+  /* Light Theme */
+  --theme-bg-primary: #ffffff;
+  --theme-bg-secondary: #f8fafc;
+  --theme-bg-tertiary: #f1f5f9;
+  --theme-card: #ffffff;
+  --theme-border: #e2e8f0;
+  --theme-text-primary: #1e293b;
+  --theme-text-secondary: #64748b;
+  --theme-text-muted: #94a3b8;
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #2563eb;
+  --theme-hover: #f1f5f9;
+  --theme-shadow: rgba(0, 0, 0, 0.1);
+}
+
+.dark {
+  --theme-bg-primary: #0f172a;
+  --theme-bg-secondary: #1e293b;
+  --theme-bg-tertiary: #334155;
+  --theme-card: #1e293b;
+  --theme-border: #334155;
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #2563eb;
+  --theme-hover: #334155;
+  --theme-shadow: rgba(0, 0, 0, 0.3);
+}
+
+.grey {
+  --theme-bg-primary: #f5f5f5;
+  --theme-bg-secondary: #e5e5e5;
+  --theme-bg-tertiary: #d4d4d4;
+  --theme-card: #ffffff;
+  --theme-border: #d1d5db;
+  --theme-text-primary: #374151;
+  --theme-text-secondary: #6b7280;
+  --theme-text-muted: #9ca3af;
+  --theme-primary: #6b7280;
+  --theme-primary-hover: #4b5563;
+  --theme-hover: #f3f4f6;
+  --theme-shadow: rgba(0, 0, 0, 0.15);
+}
+
+/* Theme Utility Classes */
+@layer utilities {
+  .bg-theme-primary { background-color: var(--theme-bg-primary); }
+  .bg-theme-secondary { background-color: var(--theme-bg-secondary); }
+  .bg-theme-tertiary { background-color: var(--theme-bg-tertiary); }
+  .bg-theme-card { background-color: var(--theme-card); }
+  .bg-theme-hover { background-color: var(--theme-hover); }
+  .bg-theme-primary-btn { background-color: var(--theme-primary); }
+  .bg-theme-primary-btn:hover { background-color: var(--theme-primary-hover); }
+  
+  .text-theme-primary { color: var(--theme-text-primary); }
+  .text-theme-secondary { color: var(--theme-text-secondary); }
+  .text-theme-muted { color: var(--theme-text-muted); }
+  
+  .border-theme-border { border-color: var(--theme-border); }
+  
+  .shadow-theme { box-shadow: 0 1px 3px 0 var(--theme-shadow), 0 1px 2px 0 var(--theme-shadow); }
+  .shadow-theme-lg { box-shadow: 0 10px 15px -3px var(--theme-shadow), 0 4px 6px -2px var(--theme-shadow); }
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
