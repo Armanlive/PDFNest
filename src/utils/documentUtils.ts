@@ -1,6 +1,13 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
+import * as pdfjsLib from 'pdfjs-dist';
+import Tesseract from 'tesseract.js';
+import * as mammoth from 'mammoth';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+
+// Set worker source for pdfjs-dist
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 export interface ProcessingProgress {
   progress: number;
@@ -52,28 +59,62 @@ export class DocumentProcessor {
   }
 
   static async imageToExcel(files: File[], onProgress?: (progress: ProcessingProgress) => void): Promise<Uint8Array> {
-    onProgress?.({ progress: 25, status: 'Processing images...' });
+    onProgress?.({ progress: 10, status: 'Initializing OCR...' });
     
     const data: any[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      data.push({
-        'Image Name': file.name,
-        'File Size': `${(file.size / 1024).toFixed(2)} KB`,
-        'File Type': file.type,
-        'Last Modified': new Date(file.lastModified).toLocaleDateString(),
-        'Index': i + 1
-      });
+      onProgress?.({ progress: 10 + ((i / files.length) * 40), status: `Processing image ${i + 1} of ${files.length}...` });
+      
+      try {
+        const result = await Tesseract.recognize(file, 'eng', {
+          logger: m => {
+             // Map tesseract progress (0-1) to our progress range
+             if (m.status === 'recognizing text') {
+                 // detailed progress could go here
+             }
+          }
+        });
+
+        const text = result.data.text;
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        
+        // Add file info
+        data.push({
+            'Source Image': file.name,
+            'Content': '--- Start of Image Content ---'
+        });
+
+        // Add extracted lines
+        lines.forEach((line, index) => {
+            data.push({
+                'Source Image': '',
+                'Content': line
+            });
+        });
+
+        data.push({
+            'Source Image': '',
+            'Content': '--- End of Image Content ---'
+        });
+
+      } catch (error) {
+        console.error('OCR Error:', error);
+        data.push({
+            'Source Image': file.name,
+            'Content': 'Error extracting text from this image.'
+        });
+      }
     }
     
-    onProgress?.({ progress: 50, status: 'Creating Excel structure...' });
+    onProgress?.({ progress: 60, status: 'Creating Excel structure...' });
     
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Images Data');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Extracted Data');
     
-    onProgress?.({ progress: 75, status: 'Generating Excel file...' });
+    onProgress?.({ progress: 80, status: 'Generating Excel file...' });
     
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     
@@ -111,60 +152,166 @@ export class DocumentProcessor {
   }
 
   static async pdfToWord(file: File, onProgress?: (progress: ProcessingProgress) => void): Promise<Uint8Array> {
-    onProgress?.({ progress: 25, status: 'Reading PDF...' });
+    onProgress?.({ progress: 10, status: 'Reading PDF...' });
     
-    // Simulated conversion - in real implementation, you'd use a PDF parsing library
-    const doc = new jsPDF();
-    doc.text('Converted from PDF: ' + file.name, 10, 10);
-    doc.text('This is a simulated Word conversion.', 10, 30);
-    doc.text('In production, use proper PDF parsing libraries.', 10, 50);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     
-    onProgress?.({ progress: 50, status: 'Extracting text...' });
-    onProgress?.({ progress: 75, status: 'Creating Word document...' });
+    const docChildren: Paragraph[] = [];
     
-    const pdfData = doc.output('arraybuffer');
+    for (let i = 1; i <= pdf.numPages; i++) {
+        onProgress?.({ progress: 10 + ((i / pdf.numPages) * 60), status: `Extracting text from page ${i}...` });
+        
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Simple text extraction - just joining items with spaces
+        // A more advanced implementation would try to preserve layout
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        
+        docChildren.push(
+            new Paragraph({
+                children: [new TextRun(pageText)],
+            })
+        );
+        
+        // Add a page break after each page except the last
+        if (i < pdf.numPages) {
+             docChildren.push(new Paragraph({
+                 children: [new TextRun({ break: 1 })] // Simple break, ideally page break
+             }));
+        }
+    }
+
+    onProgress?.({ progress: 80, status: 'Creating Word document...' });
+
+    const doc = new Document({
+        sections: [{
+            properties: {},
+            children: docChildren,
+        }],
+    });
+
+    onProgress?.({ progress: 90, status: 'Finalizing file...' });
     
+    const blob = await Packer.toBlob(doc);
+    const buffer = await blob.arrayBuffer();
+
     onProgress?.({ progress: 100, status: 'Conversion complete!' });
-    return new Uint8Array(pdfData);
+    return new Uint8Array(buffer);
   }
 
   static async wordToPDF(file: File, onProgress?: (progress: ProcessingProgress) => void): Promise<Uint8Array> {
-    onProgress?.({ progress: 25, status: 'Reading Word document...' });
+    onProgress?.({ progress: 20, status: 'Reading Word document...' });
     
-    // Simulated conversion - in real implementation, you'd use mammoth.js or similar
-    const doc = new jsPDF();
-    doc.text('Converted from Word: ' + file.name, 10, 10);
-    doc.text('This is a simulated PDF conversion.', 10, 30);
-    doc.text('File size: ' + (file.size / 1024).toFixed(2) + ' KB', 10, 50);
+    const arrayBuffer = await file.arrayBuffer();
     
-    onProgress?.({ progress: 50, status: 'Converting content...' });
-    onProgress?.({ progress: 75, status: 'Creating PDF...' });
+    onProgress?.({ progress: 40, status: 'Converting to HTML...' });
     
-    const pdfData = doc.output('arraybuffer');
+    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+    const html = result.value;
+    
+    onProgress?.({ progress: 60, status: 'Generating PDF...' });
+    
+    // Create a temporary container
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    container.style.width = '210mm'; // A4 width
+    container.style.padding = '20mm';
+    container.style.backgroundColor = 'white';
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    document.body.appendChild(container);
+
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    
+    try {
+        await pdf.html(container, {
+            callback: (doc) => {
+                // callback
+            },
+            x: 0,
+            y: 0,
+            width: 210, // target width in the PDF document
+            windowWidth: 800 // window width in CSS pixels
+        });
+    } catch (e) {
+        console.error("PDF Generation Error", e);
+    } finally {
+        document.body.removeChild(container);
+    }
+
+    onProgress?.({ progress: 90, status: 'Finalizing PDF...' });
+    
+    const pdfData = pdf.output('arraybuffer');
     
     onProgress?.({ progress: 100, status: 'Conversion complete!' });
     return new Uint8Array(pdfData);
   }
 
   static async pdfToExcel(file: File, onProgress?: (progress: ProcessingProgress) => void): Promise<Uint8Array> {
-    onProgress?.({ progress: 25, status: 'Reading PDF...' });
+    onProgress?.({ progress: 10, status: 'Reading PDF...' });
     
-    // Simulated conversion - extract basic file info
-    const data = [{
-      'PDF Name': file.name,
-      'File Size': `${(file.size / 1024).toFixed(2)} KB`,
-      'Last Modified': new Date(file.lastModified).toLocaleDateString(),
-      'Type': 'PDF Document',
-      'Status': 'Converted'
-    }];
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     
-    onProgress?.({ progress: 50, status: 'Extracting data...' });
+    const data: any[] = [];
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+        onProgress?.({ progress: 10 + ((i / pdf.numPages) * 60), status: `Processing page ${i}...` });
+        
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Try to reconstruct lines
+        // This is a heuristic approach
+        let lastY = -1;
+        let currentLine: string[] = [];
+        
+        // Sort items by Y (descending) then X (ascending)
+        const items = textContent.items.map((item: any) => ({
+            str: item.str,
+            x: item.transform[4],
+            y: item.transform[5]
+        })).sort((a, b) => {
+            if (Math.abs(a.y - b.y) > 5) return b.y - a.y; // Different lines
+            return a.x - b.x; // Same line
+        });
+
+        items.forEach((item) => {
+            if (lastY !== -1 && Math.abs(item.y - lastY) > 5) {
+                // New line
+                if (currentLine.length > 0) {
+                     // Add to data
+                     const rowData: any = { 'Page': i };
+                     currentLine.forEach((text, idx) => {
+                         rowData[`Column ${idx + 1}`] = text;
+                     });
+                     data.push(rowData);
+                }
+                currentLine = [];
+            }
+            currentLine.push(item.str);
+            lastY = item.y;
+        });
+        
+        // Add last line
+        if (currentLine.length > 0) {
+             const rowData: any = { 'Page': i };
+             currentLine.forEach((text, idx) => {
+                 rowData[`Column ${idx + 1}`] = text;
+             });
+             data.push(rowData);
+        }
+    }
+    
+    onProgress?.({ progress: 80, status: 'Creating Excel structure...' });
     
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'PDF Data');
     
-    onProgress?.({ progress: 75, status: 'Creating Excel file...' });
+    onProgress?.({ progress: 90, status: 'Generating Excel file...' });
     
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     
